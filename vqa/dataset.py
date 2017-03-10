@@ -1,9 +1,13 @@
 import cPickle as pickle
 import json
 import os
-from dframe.dataset.dataset import Dataset
+from abc import ABCMeta, abstractmethod
 
-import config as config
+from dframe.dataset.sample import Value, Sample
+from dframe.dataset.dataset import Dataset
+from keras.preprocessing import image
+
+from vqa import config
 
 
 class VQADataset(Dataset):
@@ -11,20 +15,22 @@ class VQADataset(Dataset):
     You can find the data here: http://www.visualqa.org/download.html"""
 
     PARSED_DATASET_PATH = os.path.join(config.DATA_PATH, 'parsed_dataset.p')
+
     PARSED_IMAGES_KEY = 'images'
     PARSED_QUESTIONS_KEY = 'questions'
     PARSED_ANSWERS_KEY = 'answers'
 
-    def __init__(self, images_path, questions_path, annotations_path):
+    def __init__(self, images_path, questions_path, annotations_path, tokenizer=None, force=False):
         # Assign attributes
         self.images_path = images_path
         self.questions_path = questions_path
         self.annotations_path = annotations_path
+        self.tokenizer = tokenizer
 
         super(VQADataset, self).__init__()
 
         # Build dataset
-        self.build()
+        self.build(force)
 
     def build(self, force=False):
         """Creates the dataset with all of its samples.
@@ -36,7 +42,6 @@ class VQADataset(Dataset):
             force (bool): True to force the building of the dataset from the raw data. If False is given, this method
                 will look for the parsed version of the data to speed up the process
         """
-
         print 'Building dataset...'
 
         if force:
@@ -49,6 +54,17 @@ class VQADataset(Dataset):
         images = parsed_dataset[self.PARSED_IMAGES_KEY]
         questions = parsed_dataset[self.PARSED_QUESTIONS_KEY]
         answers = parsed_dataset[self.PARSED_ANSWERS_KEY]
+
+        del parsed_dataset
+
+        self.__create_samples(images, questions, answers)
+        del images
+        del questions
+        del answers
+
+        return self
+
+
 
     @staticmethod
     def get_image_id(image_name):
@@ -102,8 +118,8 @@ class VQADataset(Dataset):
             questions_json = json.load(f)
 
         questions = {
-            question['question_id']: Question(question['question_id'], question['image_id'], question['question'])
-            for question in questions_json['questions']}
+            question['question_id']: Question(question['question_id'], question['image_id'], question['question'],
+                                              self.tokenizer) for question in questions_json['questions']}
 
         return questions
 
@@ -121,28 +137,98 @@ class VQADataset(Dataset):
         # answer['answer_id'] ranges from 1 to 10 instead of 0 to 9
         answers = {(annotation['question_id'] * 10 + (answer['answer_id'] - 1)):
                        Answer(answer['answer_id'], annotation['question_id'], annotation['image_id'],
-                              answer['answer'])
+                              answer['answer'], self.tokenizer)
                    for annotation in annotations_json['annotations'] for answer in annotation['answers']}
 
         return answers
 
+    def __create_samples(self, images, questions, answers):
+        print 'Creating samples from parsed dataset...'
+        for answer_id, answer in answers.iteritems():
+            self.add(Sample(images[answer.image_id], [questions[answer.question_id], answer]))
+        print 'Finish creating samples from dataset'
 
-class Image:
-    def __init__(self, image_id, image_path):
+class CacheValue(Value):
+    """Abstract class extending from Value, which allows its subclasses to cache the get_data values.
+    In order to implement it, you need to inherit from this class and add the cache_data decorator to the get_data
+    method (defined in Value), @CacheValue.cache_data.
+    Even if the function is decorated, only if the attribute cache is set to True the data will be stored
+    """
+
+    __metaclass__ = ABCMeta
+
+    def __init__(self, cache=True):
+        self.cache = cache
+        self._cached_data = None
+
+    @staticmethod
+    def cache_data(f):
+        """Decorator function for the get_data method.
+        It will store the returned values of get_data in its cache if specified through self.cache.
+        """
+        def wrapper(self, *args, **kwargs):
+            if self.cache is False:
+                return f(self, *args, **kwargs)
+            else:
+                if self._cached_data is None:
+                    self._cached_data = f(self, *args, **kwargs)
+                return self._cached_data
+
+        return wrapper
+
+
+class Image(CacheValue):
+    def __init__(self, image_id, image_path, cache=True):
         self.id = image_id
         self.path = image_path
+        super(Image, self).__init__(cache)
+
+    @CacheValue.cache_data
+    def get_data(self):
+        img = image.load_img(self.path, target_size=(224, 224))
+        return image.img_to_array(img)
 
 
-class Question:
-    def __init__(self, question_id, image_id, question_string):
+class Text(CacheValue):
+    def __init__(self, text, tokenizer=None, cache=True):
+        self.text = text
+        self.tokenizer = tokenizer
+        super(Text, self).__init__(cache)
+
+    def set_tokenizer(self, tokenizer):
+        self.tokenizer = tokenizer
+
+    @CacheValue.cache_data
+    @abstractmethod
+    def get_data(self):
+        "One-hot encoding of the text"
+        return
+
+class Question(Text):
+
+    def __init__(self, question_id, image_id, question_string, tokenizer=None):
         self.id = question_id
         self.image_id = image_id
-        self.question = question_string
+        super(Question, self).__init__(question_string, tokenizer)
+
+    def get_data(self):
+        try:
+            return self.tokenizer.text_to_one_hot(self.text)
+        except AttributeError:
+            raise AttributeError(
+                'No tokenizer has been setted in order to process the text. Use set_tokenizer or the contructor param')
 
 
-class Answer:
-    def __init__(self, answer_id, question_id, image_id, answer_string):
+class Answer(Text):
+    def __init__(self, answer_id, question_id, image_id, answer_string, tokenizer=None):
         self.id = answer_id
         self.question_id = question_id
         self.image_id = image_id
-        self.answer = answer_string
+        super(Answer, self).__init__(answer_string, tokenizer)
+
+    def get_data(self):
+        try:
+            return self.tokenizer.text_to_one_hot_seq(self.text)
+        except AttributeError:
+            raise AttributeError(
+                'No tokenizer has been setted in order to process the text. Use set_tokenizer or the contructor param')

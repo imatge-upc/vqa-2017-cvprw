@@ -7,7 +7,7 @@ BIN_PATH = os.path.join(vqa.ROOT_PATH, 'bin')
 CONFIG_PATH = os.path.join(vqa.ROOT_PATH, 'config')
 CONFIG_FILE_PATH = os.path.join(CONFIG_PATH, 'config.json')
 DATA_PATH = os.path.join(vqa.ROOT_PATH, 'data')
-
+MODELS_PATH = os.path.join(DATA_PATH, 'models')
 
 class Config:
     """Wrapper for the configuration dictionary to ease its use outside this module, providing methods to access
@@ -20,6 +20,7 @@ class Config:
     DATASET_IMAGES_PATH = 'images_path'
     DATASET_QUESTIONS_PATH = 'questions_path'
     DATASET_ANNOTATIONS_PATH = 'annotations_path'
+
 
     def __init__(self, config):
         self._config = config

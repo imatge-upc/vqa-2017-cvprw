@@ -213,7 +213,7 @@ class Question(Text):
 
     def get_data(self):
         try:
-            return self.tokenizer.text_to_one_hot(self.text)
+            return self.tokenizer.text_to_one_hot_seq(self.text)
         except AttributeError:
             raise AttributeError(
                 'No tokenizer has been setted in order to process the text. Use set_tokenizer or the contructor param')

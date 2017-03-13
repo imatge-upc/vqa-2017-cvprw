@@ -23,12 +23,10 @@ class Model_0(DFModel):
 
 
     def build(self):
-        # type: () -> object
-
         # Params
         lstm_hidden_units = 256
         # Optimizer
-        adam = Adam(lr=1e-5)
+        adam = Adam(lr=1e-4)
         # Create/load model
         try:
             with open(self.MODEL_PATH, 'r') as f:
@@ -55,7 +53,6 @@ class Model_0(DFModel):
 
             # Merge
             merged = merge([image_features, sentence_embedded], mode='sum')  # Merge for layers, merge for tensors
-            merged = BatchNormalization()(merged)
             output = Dense(output_dim=self.vocabulary_size, activation='softmax')(merged)
 
             vqa_model = Model(input=[image_input, question_input], output=output)
@@ -67,10 +64,9 @@ class Model_0(DFModel):
 
             print('Saving model...')
             model_json = vqa_model.to_json()
-
             with open(self.MODEL_PATH, 'w') as f:
                 f.write(model_json)
-            print 'Model created and saved in ' + self.MODEL_PATH
+            print('Model saved')
             self.vqamodel = vqa_model
 
     def train(self, dataset):

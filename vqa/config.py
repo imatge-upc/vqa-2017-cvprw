@@ -20,9 +20,6 @@ class Config:
     DATASET_IMAGES_PATH = 'images_path'
     DATASET_QUESTIONS_PATH = 'questions_path'
     DATASET_ANNOTATIONS_PATH = 'annotations_path'
-    TOKENIZER_PATH = os.path.join(DATA_PATH, 'tokenizer.p')
-
-    VOCABULARY_SIZE = 2000
 
 
     def __init__(self, config):

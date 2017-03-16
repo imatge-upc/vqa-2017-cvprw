@@ -1,4 +1,5 @@
 import os
+import numpy as np
 
 from dframe.model.model import Model as DFModel
 
@@ -6,21 +7,20 @@ from keras.layers import Input, Embedding, merge, Dropout, Dense, BatchNormaliza
 from keras.models import Model, model_from_json
 from keras.optimizers import Adam
 
-
 from vqa import config
 
 class Model_0(DFModel):
 
     def __init__(self, vocabulary_size=20000, question_max_len=22, model_path='model_0.p'):
         self.EMBED_HIDDEN_SIZE = 100
-        self.vqamodel = None
         self.vocabulary_size = vocabulary_size
+        self.vqa_model = None
         self.question_max_len = question_max_len
         if not os.path.isdir(config.MODELS_PATH):
             os.mkdir(config.MODELS_PATH)
         self.MODEL_PATH = os.path.join(config.MODELS_PATH, model_path)
+        self.weights_path = os.path.join(config.MODELS_PATH, 'weights_m0.h5')
         self.build()
-
 
     def build(self):
         # Params
@@ -37,7 +37,7 @@ class Model_0(DFModel):
                 vqa_model.compile(optimizer=adam, loss='categorical_crossentropy')
                 print('Model compiled')
         except IOError:
-            print('Creating model...')
+            print('Creating baseline model...')
             # Image
             image_input = Input(shape=(1024,))
             image_features = Dense(output_dim=lstm_hidden_units, activation='relu')(image_input)
@@ -56,21 +56,24 @@ class Model_0(DFModel):
             output = Dense(output_dim=self.vocabulary_size, activation='softmax')(merged)
 
             vqa_model = Model(input=[image_input, question_input], output=output)
-            print('Model created')
+            print('Baseline model created')
 
-            print('Compiling model...')
+            print('Compiling baseline model...')
             vqa_model.compile(optimizer=adam, loss='categorical_crossentropy')
-            print('Model compiled')
+            print('Baseline model compiled')
 
-            print('Saving model...')
+            print('Saving baseline model...')
             model_json = vqa_model.to_json()
             with open(self.MODEL_PATH, 'w') as f:
                 f.write(model_json)
-            print('Model saved')
-            self.vqamodel = vqa_model
+            print('Baseline model saved')
+            self.vqa_model = vqa_model
 
-    def train(self, dataset):
-        pass
+    def train(self, dataset, batch_size, epochs):
+        self.vqa_model.fit_generator(dataset.batch_generator(batch_size), samples_per_epoch=dataset.size(),
+                            nb_epoch=epochs)
+        self.vqa_model.save_weights(self.weights_path)
+
 
     def validate(self, dataset):
         pass
@@ -80,3 +83,31 @@ class Model_0(DFModel):
 
     def predict(self, sample):
         pass
+
+    def batch_generator(self, dataset, batch_size):
+        num_samples = len(dataset)
+        batch_start = 0
+        batch_end = batch_size
+
+        while True:
+            # Initialize matrix
+            I = np.zeros((batch_size, 1024), dtype=np.float16)
+            Q = np.zeros((batch_size, self.question_max_len), dtype=np.int32)
+            A = np.zeros((batch_size, self.vocab_size), dtype=np.bool_)
+            # Assign each sample in the batch
+            for idx, sample in enumerate(dataset):
+                I[idx], Q[idx] = sample.get_input(self.question_max_len)
+                A[idx] = sample.get_output()
+
+        yield ([I, Q], A)
+
+        # Update interval
+        batch_start += batch_size
+        # An epoch has finished
+        if batch_start >= num_samples:
+            batch_start = 0
+            # Change the order so the model won't see the samples in the same order in the next epoch
+            random.shuffle(self.samples)
+        batch_end = batch_start + batch_size
+        if batch_end > num_samples:
+            batch_end = num_samples

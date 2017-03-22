@@ -61,7 +61,6 @@ class VQADataset(Dataset):
         del images
         del questions
         del answers
-        print self.len()
         return self
 
     @staticmethod

@@ -1,11 +1,12 @@
 import os
 import argparse
 
+from dframe.dataset.persistence import PicklePersistenceManager
 from dframe.dataset.persistence import H5pyPersistenceManager
 from vqa import config
 from vqa.dataset import VQADataset
 from vqa.tokenizer import VQATokenizer
-from vqa.models import Model_0
+from vqa.models import Model0
 
 EPOCHS = 1
 BATCH_SIZE = 128
@@ -13,21 +14,25 @@ VOCABULARY_SIZE = 2000
 
 
 def main(action, model_id, force):
-    model = get_model(model_id)
+    # Create persistence manager
+    manager = PicklePersistenceManager()
+    model = get_model(int(model_id))
     if str(action) == 'train':
-        train_dataset = get_train_dataset(force)
-        model.train(train_dataset, BATCH_SIZE, EPOCHS)
+        train_dataset = get_train_dataset(manager, force)
+        val_dataset = get_val_dataset(manager, force)
+        model.train(train_dataset, val_dataset, BATCH_SIZE, EPOCHS)
     else:
         print 'Not allowed action'
 
 
 def get_model(model_id):
     switcher = {
-        0: Model_0()
+        0: Model0()
     }
     return switcher.get(model_id)
 
-def get_train_dataset(force = False):
+
+def get_train_dataset(manager, force = False):
     # Check if the data directory (where we will store our preprocessed datasets) exists. Create it if is doesn't
     if not os.path.isdir(config.DATA_PATH):
         os.mkdir(config.DATA_PATH)
@@ -35,13 +40,26 @@ def get_train_dataset(force = False):
     # Load configuration
     conf = config.check_config()
     tokenizer_path = os.path.join(config.DATA_PATH, 'tokenizer.p')
-    # Create persistence manager
-    manager = H5pyPersistenceManager()
     # Create & persist train dataset
     train_dataset = VQADataset(conf.get_train_images_path(), conf.get_train_questions_path(),
                                conf.get_train_annotations_path(), get_tokenizer(conf, tokenizer_path), force).build()
     manager.save(train_dataset, os.path.join(config.DATA_PATH, 'train_dataset.h5'))
     return train_dataset
+
+
+def get_val_dataset(manager, force = False):
+    # Check if the data directory (where we will store our preprocessed datasets) exists. Create it if is doesn't
+    if not os.path.isdir(config.DATA_PATH):
+        os.mkdir(config.DATA_PATH)
+
+    # Load configuration
+    conf = config.check_config()
+    tokenizer_path = os.path.join(config.DATA_PATH, 'tokenizer.p')
+    # Create & persist train dataset
+    val_dataset = VQADataset(conf.get_val_images_path(), conf.get_val_questions_path(),
+                               conf.get_val_annotations_path(), get_tokenizer(conf, tokenizer_path), force).build()
+    manager.save(val_dataset, os.path.join(config.DATA_PATH, 'val_dataset.h5'))
+    return val_dataset
 
 
 def get_tokenizer(conf, tokenizer_path):

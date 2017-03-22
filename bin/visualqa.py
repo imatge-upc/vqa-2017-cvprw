@@ -39,7 +39,7 @@ def get_train_dataset(force = False):
     manager = H5pyPersistenceManager()
     # Create & persist train dataset
     train_dataset = VQADataset(conf.get_train_images_path(), conf.get_train_questions_path(),
-                               conf.get_train_annotations_path(), get_tokenizer(conf, tokenizer_path), force)
+                               conf.get_train_annotations_path(), get_tokenizer(conf, tokenizer_path), force).build()
     manager.save(train_dataset, os.path.join(config.DATA_PATH, 'train_dataset.h5'))
     return train_dataset
 
@@ -82,7 +82,7 @@ if __name__ == '__main__':
         '--force',
         action='store_true',
         default=False,
-        help='Add this flag if you want to force the dataset\'s parsing from scratch'
+        help='Add this flag if you want to force the dataset parsing from scratch'
     )
 
     args = parser.parse_args()

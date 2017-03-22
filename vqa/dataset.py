@@ -30,7 +30,7 @@ class VQADataset(Dataset):
         super(VQADataset, self).__init__()
 
         # Build dataset
-        self.build(force)
+        #self.build(force)
 
     def build(self, force=False):
         """Creates the dataset with all of its samples.
@@ -61,10 +61,8 @@ class VQADataset(Dataset):
         del images
         del questions
         del answers
-
+        print self.len()
         return self
-
-
 
     @staticmethod
     def get_image_id(image_name):
@@ -133,7 +131,7 @@ class VQADataset(Dataset):
         # The value answer['answer_id'] it is not unique across all the answers, only on the subset of answers
         # of that question.
         # As question_id is composed by appending the question number (0-2) to the image_id (which is unique)
-        # we've composed the answer id the same way. The substraction of 1 is due to the fact that the
+        # we've composed the answer id the same way. The subtraction of 1 is due to the fact that the
         # answer['answer_id'] ranges from 1 to 10 instead of 0 to 9
         answers = {(annotation['question_id'] * 10 + (answer['answer_id'] - 1)):
                        Answer(answer['answer_id'], annotation['question_id'], annotation['image_id'],
@@ -145,8 +143,9 @@ class VQADataset(Dataset):
     def __create_samples(self, images, questions, answers):
         print 'Creating samples from parsed dataset...'
         for answer_id, answer in answers.iteritems():
-            self.add(Sample(images[answer.image_id], [questions[answer.question_id], answer]))
+            self.add(Sample([images[answer.image_id], questions[answer.question_id]], answer))
         print 'Finish creating samples from dataset'
+
 
 class CacheValue(Value):
     """Abstract class extending from Value, which allows its subclasses to cache the get_data values.
@@ -204,6 +203,7 @@ class Text(CacheValue):
         "One-hot encoding of the text"
         return
 
+
 class Question(Text):
 
     def __init__(self, question_id, image_id, question_string, tokenizer=None):
@@ -213,10 +213,10 @@ class Question(Text):
 
     def get_data(self):
         try:
-            return self.tokenizer.text_to_one_hot_seq(self.text)
+            return self.tokenizer.text_to_sequences(self.text)
         except AttributeError:
             raise AttributeError(
-                'No tokenizer has been setted in order to process the text. Use set_tokenizer or the contructor param')
+                'No tokenizer has been set in order to process the text. Use set_tokenizer or the constructor param')
 
 
 class Answer(Text):
@@ -231,4 +231,4 @@ class Answer(Text):
             return self.tokenizer.text_to_one_hot_seq(self.text)
         except AttributeError:
             raise AttributeError(
-                'No tokenizer has been setted in order to process the text. Use set_tokenizer or the contructor param')
+                'No tokenizer has been set in order to process the text. Use set_tokenizer or the constructor param')

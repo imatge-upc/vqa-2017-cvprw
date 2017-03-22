@@ -70,7 +70,7 @@ class Model_0(DFModel):
             self.vqa_model = vqa_model
 
     def train(self, dataset, batch_size, epochs):
-        self.vqa_model.fit_generator(dataset.batch_generator(batch_size), samples_per_epoch=dataset.size(),
+        self.vqa_model.fit_generator(dataset.batch_generator(batch_size), samples_per_epoch=dataset.len(),
                             nb_epoch=epochs)
         self.vqa_model.save_weights(self.weights_path)
 
@@ -83,31 +83,3 @@ class Model_0(DFModel):
 
     def predict(self, sample):
         pass
-
-    def batch_generator(self, dataset, batch_size):
-        num_samples = len(dataset)
-        batch_start = 0
-        batch_end = batch_size
-
-        while True:
-            # Initialize matrix
-            I = np.zeros((batch_size, 1024), dtype=np.float16)
-            Q = np.zeros((batch_size, self.question_max_len), dtype=np.int32)
-            A = np.zeros((batch_size, self.vocab_size), dtype=np.bool_)
-            # Assign each sample in the batch
-            for idx, sample in enumerate(dataset):
-                I[idx], Q[idx] = sample.get_input(self.question_max_len)
-                A[idx] = sample.get_output()
-
-        yield ([I, Q], A)
-
-        # Update interval
-        batch_start += batch_size
-        # An epoch has finished
-        if batch_start >= num_samples:
-            batch_start = 0
-            # Change the order so the model won't see the samples in the same order in the next epoch
-            random.shuffle(self.samples)
-        batch_end = batch_start + batch_size
-        if batch_end > num_samples:
-            batch_end = num_samples

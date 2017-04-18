@@ -8,6 +8,7 @@ CONFIG_PATH = os.path.join(vqa.ROOT_PATH, 'config')
 CONFIG_FILE_PATH = os.path.join(CONFIG_PATH, 'config.json')
 DATA_PATH = os.path.join(vqa.ROOT_PATH, 'data')
 MODELS_PATH = os.path.join(DATA_PATH, 'models')
+PRETRAINED_FEATURES_PATH = os.path.join(DATA_PATH, 'pretrained_features')
 
 class Config:
     """Wrapper for the configuration dictionary to ease its use outside this module, providing methods to access

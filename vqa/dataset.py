@@ -1,11 +1,14 @@
 import cPickle as pickle
 import json
 import os
-from abc import ABCMeta, abstractmethod
+import scipy.io
+import random
+import numpy as np
+import h5py
 
-from dframe.dataset.sample import Value, Sample
 from dframe.dataset.dataset import Dataset
-from keras.preprocessing import image
+#from vqa.dframedataset import Dataset
+from vqa.sample import VQASample, Image, Question, Answer
 
 from vqa import config
 
@@ -14,23 +17,21 @@ class VQADataset(Dataset):
     """Class that holds the VQA 1.0 dataset of the VQA challenge.
     You can find the data here: http://www.visualqa.org/download.html"""
 
-    PARSED_DATASET_PATH = os.path.join(config.DATA_PATH, 'parsed_dataset.p')
-
     PARSED_IMAGES_KEY = 'images'
     PARSED_QUESTIONS_KEY = 'questions'
     PARSED_ANSWERS_KEY = 'answers'
 
-    def __init__(self, images_path, questions_path, annotations_path, tokenizer=None, force=False):
+    def __init__(self, name, images_path, questions_path, annotations_path=None, tokenizer=None, img_pretrained_features=None):
         # Assign attributes
+        self.name = name
         self.images_path = images_path
         self.questions_path = questions_path
         self.annotations_path = annotations_path
         self.tokenizer = tokenizer
+        self.img_pretrained_features = img_pretrained_features
+        self.PARSED_DATASET_PATH = os.path.join(config.DATA_PATH, self.name + '_parsed.p')
 
         super(VQADataset, self).__init__()
-
-        # Build dataset
-        #self.build(force)
 
     def build(self, force=False):
         """Creates the dataset with all of its samples.
@@ -53,14 +54,22 @@ class VQADataset(Dataset):
 
         images = parsed_dataset[self.PARSED_IMAGES_KEY]
         questions = parsed_dataset[self.PARSED_QUESTIONS_KEY]
-        answers = parsed_dataset[self.PARSED_ANSWERS_KEY]
-
+        if self.annotations_path is not None:
+            answers = parsed_dataset[self.PARSED_ANSWERS_KEY]
+            self.__create_samples(images, questions, answers)
+            del answers
+        else:
+            self.__create_samples(images, questions)
         del parsed_dataset
 
-        self.__create_samples(images, questions, answers)
+
+        #path = config.DATA_PATH + "/" + self.name
+        #self.save_dict_to_hdf5(images, path + "_images.h5", scipy.io.loadmat(config.PRETRAINED_FEATURES_PATH + '/train_ImageNet_FisherVectors.mat')['features'])
+        #self.save_dict_to_hdf5(questions, path +"_questions.h5")
+        #self.save_dict_to_hdf5(answers, path + "_answers.h5")
+
         del images
         del questions
-        del answers
         return self
 
     @staticmethod
@@ -85,10 +94,14 @@ class VQADataset(Dataset):
         print 'Parsing dataset...'
         images = self.__parse_images()
         questions = self.__parse_questions()
-        answers = self.__parse_annotations()
-        parsed_dataset = {self.PARSED_IMAGES_KEY: images,
-                          self.PARSED_QUESTIONS_KEY: questions,
-                          self.PARSED_ANSWERS_KEY: answers}
+        if self.annotations_path is not None:
+            answers = self.__parse_annotations()
+            parsed_dataset = {self.PARSED_IMAGES_KEY: images,
+                              self.PARSED_QUESTIONS_KEY: questions,
+                              self.PARSED_ANSWERS_KEY: answers}
+        else:
+            parsed_dataset = {self.PARSED_IMAGES_KEY: images,
+                              self.PARSED_QUESTIONS_KEY: questions}
 
         # Save parsed dataset for later reuse
         if not os.path.isdir(config.DATA_PATH):
@@ -101,11 +114,41 @@ class VQADataset(Dataset):
 
     def __parse_images(self):
         print 'Parsing images from image directory: {}'.format(self.images_path)
+        print self.img_pretrained_features
+        if self.img_pretrained_features is not None:
+            if self.img_pretrained_features is 'train':
+                prefix = 'COCO_train2014_'
+                id_start = len(prefix)
+                image_ids_path = config.PRETRAINED_FEATURES_PATH + '/train_list.txt'
+            elif self.img_pretrained_features is 'val':
+                prefix = 'COCO_val2014_'
+                id_start = len(prefix)
+                image_ids_path = config.PRETRAINED_FEATURES_PATH + '/val_list.txt'
+            elif self.img_pretrained_features is 'test':
+                prefix = 'COCO_test2015_'
+                id_start = len(prefix)
+                image_ids_path = config.PRETRAINED_FEATURES_PATH + '/test_list.txt'
+            else:
+                raise ValueError('Not a valid dataset partition selected')
+            id_end = id_start + 12  # The string id in the image name has 12 characters
+            with open(image_ids_path, 'r') as f:
+                tmp = f.read()
+                image_ids = tmp.split('\n')
+                image_ids.remove('')  # Remove the empty item (the last one) as tmp ends with '\n'
+                image_ids = map(lambda x: int(x[id_start:id_end]), image_ids)
 
-        image_filenames = os.listdir(self.images_path)
-        images = {self.get_image_id(image_filename): Image(self.get_image_id(image_filename),
-                                                           os.path.join(self.images_path, image_filename))
-                  for image_filename in image_filenames}
+            image_ids_dict = {}
+            for idx, image_id in enumerate(image_ids):
+                image_ids_dict[image_id] = idx
+
+            images = {image_id: Image(image_id, os.path.join(self.images_path, prefix + str(image_id)), features_idx)
+                      for image_id, features_idx in image_ids_dict.iteritems()}
+        else:
+            image_filenames = os.listdir(self.images_path)
+            images = {self.get_image_id(image_filename): Image(self.get_image_id(image_filename),
+                                                               os.path.join(self.images_path, image_filename))
+                      for image_filename in image_filenames}
+        print 'Finish parsing images'
         return images
 
     def __parse_questions(self):
@@ -117,6 +160,7 @@ class VQADataset(Dataset):
         questions = {
             question['question_id']: Question(question['question_id'], question['image_id'], question['question'],
                                               self.tokenizer) for question in questions_json['questions']}
+        print 'Finish parsing questions'
 
         return questions
 
@@ -136,98 +180,74 @@ class VQADataset(Dataset):
                        Answer(answer['answer_id'], annotation['question_id'], annotation['image_id'],
                               answer['answer'], self.tokenizer)
                    for annotation in annotations_json['annotations'] for answer in annotation['answers']}
+        print 'Finish parsing annotations'
 
         return answers
 
-    def __create_samples(self, images, questions, answers):
-        print 'Creating samples from parsed dataset...'
-        for answer_id, answer in answers.iteritems():
-            self.add(Sample([images[answer.image_id], questions[answer.question_id]], answer))
-        print 'Finish creating samples from dataset'
+    def __create_samples(self, images, questions, answers=None):
+        if answers is not None:
+            print 'Creating samples from parsed dataset...'
+            for answer_id, answer in answers.iteritems():
+                self.add(VQASample(images[answer.image_id], questions[answer.question_id], answer))
+            print 'Finish creating samples from dataset'
+        else:
+            for question_id, question in questions.iteritems():
+                self.add(VQASample(images[question.image_id], question))
 
+    def generator(self, batch_size, shuffle=True):
+        batch_start = 0
+        num_samples = self.len()
+        batch_start = 0
+        batch_end = batch_size
+        if self.img_pretrained_features is 'train':
+            features = scipy.io.loadmat(config.PRETRAINED_FEATURES_PATH + '/train_ImageNet_FisherVectors.mat')['features']
+        elif self.img_pretrained_features is 'val':
+            features = scipy.io.loadmat(config.PRETRAINED_FEATURES_PATH + '/val_ImageNet_FisherVectors.mat')['features']
+        elif self.img_pretrained_features is 'test':
+            features = scipy.io.loadmat(config.PRETRAINED_FEATURES_PATH + '/test_ImageNet_FisherVectors.mat')['features']
+        else:
+            features = None
 
-class CacheValue(Value):
-    """Abstract class extending from Value, which allows its subclasses to cache the get_data values.
-    In order to implement it, you need to inherit from this class and add the cache_data decorator to the get_data
-    method (defined in Value), @CacheValue.cache_data.
-    Even if the function is decorated, only if the attribute cache is set to True the data will be stored
-    """
+        while True:
+            # Get and yield the batch
+            I = np.zeros((batch_size, 1024), dtype=np.float16)
+            Q = np.zeros((batch_size, 22), dtype=np.int32)
+            A = np.zeros((batch_size, 20000), dtype=np.bool_)
+            for idx, sample in enumerate(self._samples[batch_start:batch_end]):
+                I[idx] = sample.get_image(features)
+                Q[idx] = sample.get_question()
+                A[idx] = sample.get_answer()
+            yield ([I, Q], A)
 
-    __metaclass__ = ABCMeta
+            batch_start += batch_size
+            # An epoch has finished
+            if batch_start >= num_samples:
+                batch_start = 0
+                # Change the order so the model won't see the samples in the same order in the next epoch
+                random.shuffle(self._samples)
+            batch_end = batch_start + batch_size
+            if batch_end > num_samples:
+                batch_end = num_samples
 
-    def __init__(self, cache=True):
-        self.cache = cache
-        self._cached_data = None
+    def save_dict_to_hdf5(self, dic, filename, pretrained_features=None):
+        with h5py.File(filename, 'w') as h5file:
+            self.recursively_save_dict_contents_to_group(h5file, '/', dic, pretrained_features)
 
-    @staticmethod
-    def cache_data(f):
-        """Decorator function for the get_data method.
-        It will store the returned values of get_data in its cache if specified through self.cache.
-        """
-        def wrapper(self, *args, **kwargs):
-            if self.cache is False:
-                return f(self, *args, **kwargs)
-            else:
-                if self._cached_data is None:
-                    self._cached_data = f(self, *args, **kwargs)
-                return self._cached_data
-
-        return wrapper
-
-
-class Image(CacheValue):
-    def __init__(self, image_id, image_path, cache=True):
-        self.id = image_id
-        self.path = image_path
-        super(Image, self).__init__(cache)
-
-    @CacheValue.cache_data
-    def get_data(self):
-        img = image.load_img(self.path, target_size=(224, 224))
-        return image.img_to_array(img)
-
-
-class Text(CacheValue):
-    def __init__(self, text, tokenizer=None, cache=True):
-        self.text = text
-        self.tokenizer = tokenizer
-        super(Text, self).__init__(cache)
-
-    def set_tokenizer(self, tokenizer):
-        self.tokenizer = tokenizer
-
-    @CacheValue.cache_data
-    @abstractmethod
-    def get_data(self):
-        "One-hot encoding of the text"
-        return
-
-
-class Question(Text):
-
-    def __init__(self, question_id, image_id, question_string, tokenizer=None):
-        self.id = question_id
-        self.image_id = image_id
-        super(Question, self).__init__(question_string, tokenizer)
-
-    def get_data(self):
+    def recursively_save_dict_contents_to_group(self, h5file, path, dic, pretrained_features):
         try:
-            return self.tokenizer.text_to_sequences(self.text)
-        except AttributeError:
-            raise AttributeError(
-                'No tokenizer has been set in order to process the text. Use set_tokenizer or the constructor param')
+            for key, item in dic.items():
+                h5file[path + str(key)] = item.get_data(pretrained_features)
+        except Exception:
+            for key, item in dic.items():
+                h5file[path + str(key)] = item.get_data()
 
+    def load_dict_from_hdf5(self, filename):
+        with h5py.File(filename, 'r') as h5file:
+            return self.recursively_load_dict_contents_from_group(h5file, '/')
 
-class Answer(Text):
-    def __init__(self, answer_id, question_id, image_id, answer_string, tokenizer=None):
-        self.id = answer_id
-        self.question_id = question_id
-        self.image_id = image_id
-        super(Answer, self).__init__(answer_string, tokenizer)
+    def recursively_load_dict_contents_from_group(self, h5file, path):
+        ans = {}
+        for key, item in h5file[path].items():
+            ans[key] = item.value
 
-    def get_data(self):
-        try:
-            return self.tokenizer.text_to_one_hot_seq(self.text)
-        except AttributeError:
-            raise AttributeError(
-                'No tokenizer has been set in order to process the text. Use set_tokenizer or the constructor param')
+        return ans

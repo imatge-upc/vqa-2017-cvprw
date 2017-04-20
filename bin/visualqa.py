@@ -11,7 +11,7 @@ from dframe.dataset.persistence import PicklePersistenceManager
 from vqa import config
 from vqa.dataset import VQADataset
 #from vqa.tokenizer import VQATokenizer
-from vqa.models import Model0
+from vqa.models import ModelZero
 from keras.preprocessing.text import Tokenizer
 
 EPOCHS = 40
@@ -39,7 +39,7 @@ def main(action, model_id, force):
 
 def get_model(model_id):
     switcher = {
-        0: Model0()
+        0: ModelZero()
     }
     return switcher.get(model_id)
 

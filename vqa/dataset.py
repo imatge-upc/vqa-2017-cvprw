@@ -6,8 +6,8 @@ import random
 import numpy as np
 import h5py
 
-from dframe.dataset.dataset import Dataset
-#from vqa.dframedataset import Dataset
+#from dframe.dataset.dataset import Dataset
+from vqa.dframedataset import Dataset
 from vqa.sample import VQASample, Image, Question, Answer
 
 from vqa import config
@@ -207,10 +207,13 @@ class VQADataset(Dataset):
             features = scipy.io.loadmat(config.PRETRAINED_FEATURES_PATH + '/test_ImageNet_FisherVectors.mat')['features']
         else:
             features = None
-
+        print type(features)
         while True:
             # Get and yield the batch
-            I = np.zeros((batch_size, 1024), dtype=np.float16)
+            if features is not None:
+                I = np.zeros((batch_size, 1024), dtype=np.float16)
+            else:
+                I = np.zeros((batch_size, 224, 224, 3), dtype=np.uint8)
             Q = np.zeros((batch_size, 22), dtype=np.int32)
             A = np.zeros((batch_size, 20000), dtype=np.bool_)
             for idx, sample in enumerate(self._samples[batch_start:batch_end]):

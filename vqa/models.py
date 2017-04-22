@@ -1,15 +1,19 @@
 import os
+import h5py
 import numpy as np
 import json
 import scipy.io
+import shutil
 
 from dframe.model.model import Model as DFModel
 
+from keras.applications.vgg16 import VGG16
 from keras.callbacks import TensorBoard, Callback
-from keras.layers import Input, Embedding, merge, Dropout, Dense, LSTM, Convolution2D, MaxPooling2D, Flatten
-from keras.models import Model, model_from_json
+from keras.layers import Input, Embedding, merge, Dropout, Dense, LSTM, Convolution2D, MaxPooling2D, Flatten, ZeroPadding2D
+from keras.models import Model, Sequential, model_from_json
 from keras.optimizers import Adam
 from keras.utils.visualize_util import plot
+from keras.utils.data_utils import get_file
 
 from vqa import config
 
@@ -131,7 +135,7 @@ class ModelOne(DFModel):
         if not os.path.isdir(config.MODELS_PATH):
             os.mkdir(config.MODELS_PATH)
         self.MODEL_PATH = os.path.join(config.MODELS_PATH, model_path)
-        self.weights_path = os.path.join(config.MODELS_PATH, 'weights_m0.h5')
+        self.weights_path = os.path.join(config.MODELS_PATH, 'weights_m1.h5')
         self.build()
 
     def build(self):
@@ -139,6 +143,9 @@ class ModelOne(DFModel):
         lstm_hidden_units = 256
         # Optimizer
         adam = Adam(lr=1e-4)
+        #VGG-16 Weights Paths:
+        weights_path ='https://github.com/fchollet/deep-learning-models/releases/download/v0.1/vgg16_weights_tf_dim_ordering_tf_kernels.h5'
+
         # Create/load model
         try:
             with open(self.MODEL_PATH, 'r') as f:
@@ -146,42 +153,74 @@ class ModelOne(DFModel):
                 self.vqa_model = model_from_json(f.read())
                 print('Baseline model loaded')
                 print('Compiling baseline model...')
-                self.vqa_model.compile(optimizer=adam, loss='categorical_crossentropy')
+                self.vqa_model.compile(optimizer=adam, loss='categorical_crossentropy', metrics=['accuracy'])
                 print('Model compiled')
         except IOError:
             print('Creating baseline model...')
-            # Image
+            # VGG:
+            # Set to all layers trainable=False to freeze VGG-16 weights'
+            vgg = Sequential()
+            vgg.add(ZeroPadding2D((1, 1), input_shape=(224, 224, 3), trainable=False))
+            vgg.add(Convolution2D(64, 3, 3, activation='relu', trainable=False))
+            vgg.add(ZeroPadding2D((1, 1), trainable=False))
+            vgg.add(Convolution2D(64, 3, 3, activation='relu', trainable=False))
+            vgg.add(MaxPooling2D((2, 2), strides=(2, 2), trainable=False))
+
+            vgg.add(ZeroPadding2D((1, 1), trainable=False))
+            vgg.add(Convolution2D(128, 3, 3, activation='relu', trainable=False))
+            vgg.add(ZeroPadding2D((1, 1), trainable=False))
+            vgg.add(Convolution2D(128, 3, 3, activation='relu', trainable=False))
+            vgg.add(MaxPooling2D((2, 2), strides=(2, 2), trainable=False))
+
+            vgg.add(ZeroPadding2D((1, 1)))
+            vgg.add(Convolution2D(256, 3, 3, activation='relu'))
+            vgg.add(ZeroPadding2D((1, 1)))
+            vgg.add(Convolution2D(256, 3, 3, activation='relu'))
+            vgg.add(ZeroPadding2D((1, 1)))
+            vgg.add(Convolution2D(256, 3, 3, activation='relu'))
+            vgg.add(MaxPooling2D((2, 2), strides=(2, 2)))
+
+            vgg.add(ZeroPadding2D((1, 1)))
+            vgg.add(Convolution2D(512, 3, 3, activation='relu'))
+            vgg.add(ZeroPadding2D((1, 1)))
+            vgg.add(Convolution2D(512, 3, 3, activation='relu'))
+            vgg.add(ZeroPadding2D((1, 1)))
+            vgg.add(Convolution2D(512, 3, 3, activation='relu'))
+            vgg.add(MaxPooling2D((2, 2), strides=(2, 2)))
+
+            vgg.add(ZeroPadding2D((1, 1)))
+            vgg.add(Convolution2D(512, 3, 3, activation='relu'))
+            vgg.add(ZeroPadding2D((1, 1)))
+            vgg.add(Convolution2D(512, 3, 3, activation='relu'))
+            vgg.add(ZeroPadding2D((1, 1)))
+            vgg.add(Convolution2D(512, 3, 3, activation='relu'))
+            vgg.add(MaxPooling2D((2, 2), strides=(2, 2)))
+
+            vgg.add(Flatten(trainable=False))
+            vgg.add(Dense(4096, activation='relu'))
+            vgg.add(Dropout(0.5))
+            vgg.add(Dense(4096, activation='relu'))
+            vgg.add(Dropout(0.5))
+            vgg.add(Dense(1000, activation='softmax'))
+
+            # Load VGG-16 weights
+            print 'Obtaining VGG weights...'
+            prepared_weights_path = get_file('vgg16_weights_tf_dim_ordering_tf_kernels.h5',
+                                    weights_path, cache_subdir='models')
+            print 'VGG weights obtained!'
+            print 'Preparing and loading VGG weights...'
+            vgg.load_weights(prepared_weights_path)
+            vgg.layers.pop()
+            vgg.layers.pop()
+            vgg.layers.pop()
+            vgg.outputs = [vgg.layers[-1].output]
+            vgg.layers[-1].outbound_nodes = []
+            print 'VGG weights prepared and loaded!'
+
+            #Image:
             image_input = Input(shape=(224, 224, 3))
-            # Block 1
-            x = Convolution2D(64, 3, 3, activation='relu', border_mode='same', name='conv1_1')(image_input)
-            x = Convolution2D(64, 3, 3, activation='relu', border_mode='same', name='conv1_2')(x)
-            x = MaxPooling2D((2, 2), strides=(2, 2), name='pool1')(x)
-
-            # Block 2
-            x = Convolution2D(128, 3, 3, activation='relu', border_mode='same', name='conv2_1')(x)
-            x = Convolution2D(128, 3, 3, activation='relu', border_mode='same', name='conv2_2')(x)
-            x = MaxPooling2D((2, 2), strides=(2, 2), name='pool2')(x)
-
-            # Block 3
-            x = Convolution2D(256, 3, 3, activation='relu', border_mode='same', name='conv3_1')(x)
-            x = Convolution2D(256, 3, 3, activation='relu', border_mode='same', name='conv3_2')(x)
-            x = Convolution2D(256, 3, 3, activation='relu', border_mode='same', name='conv3_3')(x)
-            x = MaxPooling2D((2, 2), strides=(2, 2), name='pool3')(x)
-
-            # Block 4
-            x = Convolution2D(512, 3, 3, activation='relu', border_mode='same', name='conv4_1')(x)
-            x = Convolution2D(512, 3, 3, activation='relu', border_mode='same', name='conv4_2')(x)
-            x = Convolution2D(512, 3, 3, activation='relu', border_mode='same', name='conv4_3')(x)
-            x = MaxPooling2D((2, 2), strides=(2, 2), name='pool4')(x)
-
-            # Block 5
-            x = Convolution2D(512, 3, 3, activation='relu', border_mode='same', name='conv5_1')(x)
-            x = Convolution2D(512, 3, 3, activation='relu', border_mode='same', name='conv5_2')(x)
-            x = Convolution2D(512, 3, 3, activation='relu', border_mode='same', name='conv5_3')(x)
-            x = MaxPooling2D((2, 2), strides=(2, 2), name='pool5')(x)
-
-            x = Flatten(name='flatten')(x)
-            image_features = Dense(4096, activation='relu', name='fc6')(x)
+            x = vgg(image_input)
+            image_features = Dense(output_dim=lstm_hidden_units, activation='relu')(x)
 
             # Question
             question_input = Input(shape=(self.question_max_len,), dtype='int32')
@@ -192,7 +231,7 @@ class ModelOne(DFModel):
             sentence_embedded = Dropout(0.5)(sentence_embedded)
 
             # Merge
-            merged = merge([image_features, sentence_embedded], mode='concat')  # Merge for layers, merge for tensors
+            merged = merge([image_features, sentence_embedded], mode='sum')  # Merge for layers, merge for tensors
             output = Dense(output_dim=self.vocabulary_size, activation='softmax')(merged)
 
             self.vqa_model = Model(input=[image_input, question_input], output=output)

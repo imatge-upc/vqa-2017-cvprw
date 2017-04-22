@@ -11,11 +11,11 @@ from dframe.dataset.persistence import PicklePersistenceManager
 from vqa import config
 from vqa.dataset import VQADataset
 #from vqa.tokenizer import VQATokenizer
-from vqa.models import ModelZero
+from vqa.models import ModelZero, ModelOne
 from keras.preprocessing.text import Tokenizer
 
 EPOCHS = 40
-BATCH_SIZE = 128
+BATCH_SIZE = 64
 VOCABULARY_SIZE = 20000
 
 
@@ -30,7 +30,7 @@ def main(action, model_id, force):
         #test_dataset = get_test_dataset(manager, tokenizer, force)
 
         model.train(train_dataset, val_dataset, BATCH_SIZE, EPOCHS)
-        model.validate(val_dataset, config.MODELS_PATH + '/weights_m0.h5', BATCH_SIZE)
+        model.validate(val_dataset, config.MODELS_PATH + '/weights_m1.h5', BATCH_SIZE)
         #model.test(test_dataset,config.MODELS_PATH + '/weights_m0.h5', BATCH_SIZE )
     else:
         print 'Not allowed action'
@@ -39,13 +39,14 @@ def main(action, model_id, force):
 
 def get_model(model_id):
     switcher = {
-        0: ModelZero()
+        0: ModelZero(),
+        1: ModelOne()
     }
     return switcher.get(model_id)
 
 
 def get_train_dataset(manager, tokenizer, force = False):
-    train_dataset_path = os.path.join(config.DATA_PATH, 'train_dataset.h5')
+    train_dataset_path = os.path.join(config.DATA_PATH, 'vgg_train_dataset.h5')
     # Check if the data directory (where we will store our preprocessed datasets) exists. Create it if is doesn't
     if not os.path.isdir(config.DATA_PATH):
         os.mkdir(config.DATA_PATH)
@@ -60,12 +61,12 @@ def get_train_dataset(manager, tokenizer, force = False):
         # Create & persist train dataset
         print 'Creating train dataset'
         train_dataset = VQADataset("train_dataset", conf.get_train_images_path(), conf.get_train_questions_path(),
-                                   conf.get_train_annotations_path(), tokenizer, 'train').build(force)
+                                   conf.get_train_annotations_path(), tokenizer).build(force)
     return train_dataset
 
 
 def get_val_dataset(manager, tokenizer, force = False):
-    val_dataset_path = os.path.join(config.DATA_PATH, 'val_dataset.p')
+    val_dataset_path = os.path.join(config.DATA_PATH, 'vgg_val_dataset.p')
     # Check if the data directory (where we will store our preprocessed datasets) exists. Create it if is doesn't
     if not os.path.isdir(config.DATA_PATH):
         os.mkdir(config.DATA_PATH)
@@ -80,7 +81,7 @@ def get_val_dataset(manager, tokenizer, force = False):
         # Create & persist train dataset
         print 'Creating validation dataset'
         val_dataset = VQADataset("val_dataset", conf.get_val_images_path(), conf.get_val_questions_path(),
-                                   conf.get_val_annotations_path(), tokenizer, 'val').build(force)
+                                   conf.get_val_annotations_path(), tokenizer).build(force)
     return val_dataset
 
 def get_test_dataset(manager, tokenizer, force = False):
@@ -148,9 +149,9 @@ if __name__ == '__main__':
     parser.add_argument(
         '-m',
         '--model',
-        choices=['0'],
-        default='0',
-        help='Model to select. Model 0 refers to the baseline model.'
+        choices=['0', '1'],
+        default='1',
+        help='Model to select. Model 0: baseline model with pretrained image features. Model 1: VGG based image features'
     )
     parser.add_argument(
         '-f',

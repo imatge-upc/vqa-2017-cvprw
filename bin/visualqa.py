@@ -2,24 +2,21 @@ import os
 import argparse
 import cPickle as pickle
 import json
-import h5py
-import numpy as np
-import scipy.io
+
 from keras import backend as K
-#from dframe.dataset.persistence import H5pyPersistenceManager
 from dframe.dataset.persistence import PicklePersistenceManager
 from vqa import config
 from vqa.dataset import VQADataset
-#from vqa.tokenizer import VQATokenizer
-from vqa.models import ModelZero, ModelOne
+from vqa.models import ModelZero, ModelOne, ModelTwo, ModelThree
 from keras.preprocessing.text import Tokenizer
 
 EPOCHS = 40
-BATCH_SIZE = 64
-VOCABULARY_SIZE = 20000
+BATCH_SIZE = 100
+VOCABULARY_SIZE = 10000
+QUESTION_MAX_LEN = 22
 
 
-def main(action, model_id, force):
+def main(action, model_id, force, parse_dataset):
     # Create persistence manager
     manager = PicklePersistenceManager()
     tokenizer = get_tokenizer(os.path.join(config.DATA_PATH, 'tokenizer.p'))
@@ -27,11 +24,11 @@ def main(action, model_id, force):
     if str(action) == 'train':
         train_dataset = get_train_dataset(manager, tokenizer, force)
         val_dataset = get_val_dataset(manager, tokenizer, force)
-        #test_dataset = get_test_dataset(manager, tokenizer, force)
-
         model.train(train_dataset, val_dataset, BATCH_SIZE, EPOCHS)
-        model.validate(val_dataset, config.MODELS_PATH + '/weights_m1.h5', BATCH_SIZE)
-        #model.test(test_dataset,config.MODELS_PATH + '/weights_m0.h5', BATCH_SIZE )
+        #model.validate(val_dataset, config.MODELS_PATH + '/weights_m2.h5', BATCH_SIZE)
+    elif str(action) == 'test':
+        test_dataset = get_test_dataset(manager, tokenizer, force)
+        model.test(test_dataset, config.MODELS_PATH + '/weights_m3.h5', BATCH_SIZE )
     else:
         print 'Not allowed action'
     K.clear_session()
@@ -39,8 +36,10 @@ def main(action, model_id, force):
 
 def get_model(model_id):
     switcher = {
-        0: ModelZero(),
-        1: ModelOne()
+        0: ModelZero(vocabulary_size=VOCABULARY_SIZE, question_max_len=QUESTION_MAX_LEN),
+        1: ModelOne(vocabulary_size=VOCABULARY_SIZE, question_max_len=QUESTION_MAX_LEN),
+        2: ModelTwo(vocabulary_size=VOCABULARY_SIZE, question_max_len=QUESTION_MAX_LEN),
+        3: ModelThree(vocabulary_size=VOCABULARY_SIZE, question_max_len=QUESTION_MAX_LEN)
     }
     return switcher.get(model_id)
 
@@ -61,7 +60,7 @@ def get_train_dataset(manager, tokenizer, force = False):
         # Create & persist train dataset
         print 'Creating train dataset'
         train_dataset = VQADataset("train_dataset", conf.get_train_images_path(), conf.get_train_questions_path(),
-                                   conf.get_train_annotations_path(), tokenizer).build(force)
+                                   conf.get_train_annotations_path(), tokenizer, 'n_a').build(force)
     return train_dataset
 
 
@@ -78,10 +77,10 @@ def get_val_dataset(manager, tokenizer, force = False):
     else:
         # Load configuration
         conf = config.check_config()
-        # Create & persist train dataset
+        # Create & persist val dataset
         print 'Creating validation dataset'
         val_dataset = VQADataset("val_dataset", conf.get_val_images_path(), conf.get_val_questions_path(),
-                                   conf.get_val_annotations_path(), tokenizer).build(force)
+                                   conf.get_val_annotations_path(), tokenizer, 'n_a').build(force)
     return val_dataset
 
 def get_test_dataset(manager, tokenizer, force = False):
@@ -97,10 +96,10 @@ def get_test_dataset(manager, tokenizer, force = False):
     else:
         # Load configuration
         conf = config.check_config()
-        # Create & persist train dataset
-        print 'Creating validation dataset'
-        test_dataset = VQADataset("test_dataset", conf.get_test_images_path(), conf.get_test_questions_path(),
-                                 tokenizer=tokenizer, img_pretrained_features='test').build(force)
+        # Create & persist test dataset
+        print 'Creating test dataset'
+        test_dataset = VQADataset("test-dev_dataset", conf.get_test_images_path(), conf.get_test_questions_path(),
+                                 tokenizer=tokenizer, img_pretrained_features='n_a').build(force)
     return test_dataset
 
 
@@ -111,7 +110,7 @@ def get_tokenizer(tokenizer_path):
         print 'Finish loading tokenizer'
     else:
         conf = config.check_config()
-        tokenizer = Tokenizer(nb_words=VOCABULARY_SIZE)
+        tokenizer = Tokenizer(VOCABULARY_SIZE)
         print 'Loading questions and answers from JSON files...'
         with open(conf.get_train_questions_path(), 'r') as f:
             questions_json = json.load(f)
@@ -143,14 +142,14 @@ if __name__ == '__main__':
     parser.add_argument(
         '-a',
         '--action',
-        choices=['train'],
+        choices=['train', 'test'],
         help='Which action should be performed on the model.'
     )
     parser.add_argument(
         '-m',
         '--model',
-        choices=['0', '1'],
-        default='1',
+        choices=['0', '1', '2', '3'],
+        default='3',
         help='Model to select. Model 0: baseline model with pretrained image features. Model 1: VGG based image features'
     )
     parser.add_argument(
@@ -160,7 +159,14 @@ if __name__ == '__main__':
         default=False,
         help='Add this flag if you want to force the dataset parsing from scratch'
     )
+    parser.add_argument(
+        '-p',
+        '--parse_dataset',
+        choices=['all', 'train', 'val', 'test', 'test-dev'],
+        default='all',
+        help='Options: all, train, val, test-dev'
+        )
 
     args = parser.parse_args()
 
-    main(args.action, args.model, args.force)
+    main(args.action, args.model, args.force, args.parse_dataset)

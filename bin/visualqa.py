@@ -7,7 +7,7 @@ from keras import backend as K
 from dframe.dataset.persistence import PicklePersistenceManager
 from vqa import config
 from vqa.dataset import VQADataset
-from vqa.models import ModelZero, ModelOne, ModelTwo, ModelThree
+from vqa.models import ModelZero, ModelOne, ModelTwo, ModelThree, ModelFour, ModelFive
 from keras.preprocessing.text import Tokenizer
 
 EPOCHS = 40
@@ -28,7 +28,7 @@ def main(action, model_id, force, parse_dataset):
         #model.validate(val_dataset, config.MODELS_PATH + '/weights_m2.h5', BATCH_SIZE)
     elif str(action) == 'test':
         test_dataset = get_test_dataset(manager, tokenizer, force)
-        model.test(test_dataset, config.MODELS_PATH + '/weights_m3.h5', BATCH_SIZE )
+        model.test(test_dataset, config.MODELS_PATH + '/language_only.h5', BATCH_SIZE )
     else:
         print 'Not allowed action'
     K.clear_session()
@@ -39,7 +39,9 @@ def get_model(model_id):
         0: ModelZero(vocabulary_size=VOCABULARY_SIZE, question_max_len=QUESTION_MAX_LEN),
         1: ModelOne(vocabulary_size=VOCABULARY_SIZE, question_max_len=QUESTION_MAX_LEN),
         2: ModelTwo(vocabulary_size=VOCABULARY_SIZE, question_max_len=QUESTION_MAX_LEN),
-        3: ModelThree(vocabulary_size=VOCABULARY_SIZE, question_max_len=QUESTION_MAX_LEN)
+        3: ModelThree(vocabulary_size=VOCABULARY_SIZE, question_max_len=QUESTION_MAX_LEN),
+        4: ModelFour(vocabulary_size=VOCABULARY_SIZE, question_max_len=QUESTION_MAX_LEN),
+        5: ModelFive(vocabulary_size=VOCABULARY_SIZE, question_max_len=QUESTION_MAX_LEN)
     }
     return switcher.get(model_id)
 
@@ -148,7 +150,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '-m',
         '--model',
-        choices=['0', '1', '2', '3'],
+        choices=['0', '1', '2', '3', '4', '5'],
         default='3',
         help='Model to select. Model 0: baseline model with pretrained image features. Model 1: VGG based image features'
     )

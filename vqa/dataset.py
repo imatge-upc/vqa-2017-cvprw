@@ -78,6 +78,7 @@ class VQADataset(Dataset):
         #self.extract_vgg16_image_features(images, verbose=1, layers2remove=4)
         #self.extract_resnet50_image_features(images)
         del parsed_dataset
+        print self.len()
 
         del images
         del questions
@@ -270,6 +271,9 @@ class VQADataset(Dataset):
                         batch_start = 0
                         batch_end = batch_size
                         features = image_data['image_features']
+                        #features = \
+                        #scipy.io.loadmat(config.PRETRAINED_FEATURES_PATH + '/test_ImageNet_FisherVectors.mat')[
+                        #    'features']
                         while True:
                             # Get and yield the batch
                             if self.img_pretrained_features is not None:
@@ -283,6 +287,7 @@ class VQADataset(Dataset):
                                 Q[idx] = sample.get_question()
                                 A[idx] = sample.get_answer()
                             yield ([I, Q], A)
+                            #yield (Q, A)
 
                             batch_start += batch_size
                             # An epoch has finished
@@ -308,7 +313,6 @@ class VQADataset(Dataset):
             vgg.layers.pop()
         vgg.outputs = [vgg.layers[-1].output]
         vgg.layers[-1].outbound_nodes = []
-        features = []
         file = h5py.File(os.path.join(config.DATA_PATH, self.name+'_image_features_vgg'+layers2remove+'.h5'), 'w')
         features = file.create_dataset('feats')
         print 'Predicting VGG-16 image features...'

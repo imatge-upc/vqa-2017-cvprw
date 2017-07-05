@@ -8,15 +8,9 @@ import h5py
 from itertools import izip_longest, ifilter
 import threading
 
-from keras.models import Sequential
-from keras.layers import Dropout, Dense, Convolution2D, MaxPooling2D, Flatten, ZeroPadding2D
-from keras.optimizers import Adam
-from keras.utils.visualize_util import plot
-from keras.utils.data_utils import get_file
 from keras.applications.vgg16 import VGG16, preprocess_input as vgg_prep_input
 from keras.applications.resnet50 import ResNet50, preprocess_input as resnet_prep_input
-# from dframe.dataset.dataset import Dataset
-from vqa.dframedataset import Dataset
+from dframe.dataset.dataset import Dataset
 from vqa.sample import VQASample, Image, Question, Answer
 
 from vqa import config
@@ -43,18 +37,18 @@ class VQADataset(Dataset):
 
         super(VQADataset, self).__init__()
 
-    def build(self, force=False):
+    def build(self, force=False, denoise=0):
         """Creates the dataset with all of its samples.
-        This method saves a parsed version of the VQA 1.0 dataset information in ROOT_PATH/data, which can lately
+        This method saves a parsed version of the VQA 1.0 or 2.0 dataset information in ROOT_PATH/data, which can lately
         be used to reconstruct the dataset, saving a lot of processing. You can however force to reconstruct the dataset
         from scratch with the 'force' param.
         Note that it does not save the dataset itself but a middle step with the data formatted
         Args:
             force (bool): True to force the building of the dataset from the raw data. If False is given, this method
                 will look for the parsed version of the data to speed up the process
+            denoise (int): Threshold to denoise dataset. By default set to 0 (no denoising).
         """
         print 'Building dataset...'
-        #self.extract_vgg19_image_features()
         if force:
             parsed_dataset = self.__parse_dataset()
         else:
@@ -66,20 +60,14 @@ class VQADataset(Dataset):
         questions = parsed_dataset[self.PARSED_QUESTIONS_KEY]
         if self.annotations_path is not None:
             answers = parsed_dataset[self.PARSED_ANSWERS_KEY]
-            """cleaned_answers = self.__clean_dataset(answers, 1)
-            cleaned_answers = self.__clean_dataset(answers, 2)
-            cleaned_answers = self.__clean_dataset(answers, 3)"""
+            if denoise:
+                answers = self.__denoise_dataset(answers, denoise)
             self.__create_samples(images, questions, answers)
             del answers
         else:
             self.__create_samples(images, questions)
-        #self.prepare_questions_data(questions)
-        #self.prepare_answers_data(answers)
-        #self.extract_vgg16_image_features(images, verbose=1, layers2remove=4)
-        #self.extract_resnet50_image_features(images)
-        del parsed_dataset
-        print self.len()
 
+        del parsed_dataset
         del images
         del questions
         return self
@@ -126,7 +114,6 @@ class VQADataset(Dataset):
 
     def __parse_images(self):
         print 'Parsing images from image directory: {}'.format(self.images_path)
-        compute_data = False
         if self.img_pretrained_features.split("_")[1] is 'kcnn':
             if self.img_pretrained_features is 'train_kcnn':
                 prefix = 'COCO_train2014_'
@@ -172,23 +159,8 @@ class VQADataset(Dataset):
         else:
             image_filenames = os.listdir(self.images_path)
             print 'Length of image filenames: '+ str(len(image_filenames))
-            if self.img_pretrained_features.split('_')[1] is 'vgg16':
-                h5file = h5py.File(os.path.join(config.DATA_PATH, self.name+'_image_features.h5'))
-                dset = h5file['image_features']
-            elif self.img_pretrained_features.split('_')[1] is 'vgg19':
-                if self.img_pretrained_features is 'train_vgg19':
-                    h5file = h5py.File(os.path.join(config.VGG_DATA, 'train_data_img.h5'))
-                elif self.img_pretrained_features is 'val_vgg19':
-                    h5file = h5py.File(os.path.join(config.VGG_DATA, 'val_data_img.h5'))
-                else:
-                    h5file = h5py.File(os.path.join(config.VGG_DATA, 'test_data_img.h5'))
-                dset = h5file['feats']
-            else:
-                dset = h5py.File(os.path.join(config.DATA_PATH, self.name+'_images.h5'))
-                compute_data = True
             images = {self.get_image_id(image_filename): Image(self.get_image_id(image_filename),
-                                                               os.path.join(self.images_path, image_filename), idx,
-                                                               dset, compute_data)
+                                                               os.path.join(self.images_path, image_filename), idx)
                       for idx, image_filename in enumerate(image_filenames)}
         print 'Finish parsing images'
         return images
@@ -198,11 +170,10 @@ class VQADataset(Dataset):
 
         with open(self.questions_path, 'rb') as f:
             questions_json = json.load(f)
-        with h5py.File(os.path.join(config.DATA_PATH, self.name + '_questions.h5')) as f:
-            questions = {
-                question['question_id']: Question(question['question_id'], question['image_id'], question['question'],
-                                                  self.tokenizer, f) for question in questions_json['questions']}
-            print 'Finish parsing questions'
+        questions = {
+            question['question_id']: Question(question['question_id'], question['image_id'], question['question'],
+                                              self.tokenizer) for question in questions_json['questions']}
+        print 'Finish parsing questions'
         print len(questions)
         return questions
 
@@ -218,12 +189,11 @@ class VQADataset(Dataset):
         # As question_id is composed by appending the question number (0-2) to the image_id (which is unique)
         # we've composed the answer id the same way. The subtraction of 1 is due to the fact that the
         # answer['answer_id'] ranges from 1 to 10 instead of 0 to 9
-        with h5py.File(os.path.join(config.DATA_PATH, self.name + '_answers.h5')) as f:
-            answers = {(int(annotation['question_id']) * 10 + (int(answer['answer_id']) - 1)):
-                           Answer(answer['answer_id'], annotation['question_id'], annotation['image_id'],
-                                  answer['answer'], self.tokenizer, f)
-                       for annotation in annotations_json['annotations'] for answer in annotation['answers']}
-            print 'Finish parsing annotations'
+        answers = {(int(annotation['question_id']) * 10 + (int(answer['answer_id']) - 1)):
+                       Answer(answer['answer_id'], annotation['question_id'], annotation['image_id'],
+                              answer['answer'], self.tokenizer)
+                   for annotation in annotations_json['annotations'] for answer in annotation['answers']}
+        print 'Finish parsing annotations'
 
         return answers
 
@@ -235,18 +205,13 @@ class VQADataset(Dataset):
         else:
             for question_id, question in questions.iteritems():
                 self._samples.append(VQASample(images[question.image_id], question))
-                if question.id == 262144000 or question.id == 452723009 or question.id == 25428000 or question.id == 38011004 or question.id == 452723006 or question.id == 414708000:
-                    print question.image_id
-                    print question.text
 
             print 'Finish creating samples from dataset'
-        #with h5py.File(os.path.join(config.DATA_PATH, self.name + '_samples.h5')) as f:
-        #    f.create_dataset('samples', data=self.get_samples(), compression='gzip')
 
-    def __clean_dataset(self, answers, threshold):
+    def __denoise_dataset(self, answers, threshold):
         print 'Starting to clean dataset'
         cleaned_answers = {}
-        chunks = [answers.iteritems()] * 10
+        chunks = [answers.iteritems()] * 10 #10 plausible answers for each question
         divided_answers = list(dict(ifilter(None, v)) for v in izip_longest(*chunks))
         for subset in divided_answers:
             answer_text = [answer.text for idx, answer in subset.iteritems()]
@@ -255,57 +220,65 @@ class VQADataset(Dataset):
                 cleaned_answers[int(ans.question_id) * 10 + int(ans.id) - 1] = ans
         print 'Length of the clean dataset: ' + str(len(cleaned_answers))
         with open(os.path.join(config.DATA_PATH, 'cleaned_answers' + str(threshold) + '.p'), 'wb') as f:
-            print 'Saving cleaned answers dataset...'
+            print 'Saving denoised answers dataset with threshold {}...'.format(str(threshold))
             pickle.dump(cleaned_answers, f)
-            print 'Finish saving cleaned answers!'
+            print 'Finish saving denoised answers!'
         return cleaned_answers
 
-    def generator(self, batch_size, shuffle=True):
+    def generator(self, batch_size, shuffle=True, lang_only=False):
         lock = threading.Lock()
         with lock:
-            with h5py.File(os.path.join(config.DATA_PATH, self.name+'_image_features_resnet.h5'), 'r') as image_data:
-                with h5py.File(os.path.join(config.DATA_PATH, self.name+'_questions.h5'), 'r') as question_data:
-                #if self.name.split('_')[0] is not 'test':
-                    with h5py.File(os.path.join(config.DATA_PATH, self.name+'_answers.h5'), 'r') as answer_data:
-                        num_samples = self.len()
-                        batch_start = 0
-                        batch_end = batch_size
-                        features = image_data['image_features']
-                        #features = \
-                        #scipy.io.loadmat(config.PRETRAINED_FEATURES_PATH + '/test_ImageNet_FisherVectors.mat')[
-                        #    'features']
-                        while True:
-                            # Get and yield the batch
-                            if self.img_pretrained_features is not None:
-                                I = np.zeros((batch_size, 1, 1, 1, 2048), dtype=np.float32)
-                            else:
-                                I = np.zeros((batch_size, 224, 224, 3), dtype=np.uint8)
-                            Q = np.zeros((batch_size, 22), dtype=np.int32)
-                            A = np.zeros((batch_size, 10000), dtype=np.bool_)
-                            for idx, sample in enumerate(self._samples[batch_start:batch_end]):
-                                I[idx] = features[sample._image.features_idx]
-                                Q[idx] = sample.get_question()
-                                A[idx] = sample.get_answer()
-                            yield ([I, Q], A)
-                            #yield (Q, A)
+            if not lang_only:
+                if self.img_pretrained_features.split("_")[1] is 'kcnn':
+                    features = scipy.io.loadmat(config.PRETRAINED_FEATURES_PATH + '/' + self.img_pretrained_features.split('_')[0] +
+                                                '_ImageNet_FisherVectors.mat')['features']
+                elif self.img_pretrained_features.split("_")[1] is 'vgg16':
+                    image_data = h5py.File(os.path.join(config.DATA_PATH, self.name+'_image_features_vgg16.h5'), 'r')
+                    features = image_data['image_features']
+                else:
+                    image_data = h5py.File(os.path.join(config.DATA_PATH, self.name + '_image_features_resnet.h5'), 'r')
+                    features = image_data['image_features']
 
-                            batch_start += batch_size
-                            # An epoch has finished
-                            if batch_start >= num_samples:
-                                batch_start = 0
-                                # Change the order so the model won't see the samples in the same order in the next epoch
-                                random.shuffle(self._samples)
-                            batch_end = batch_start + batch_size
-                            if batch_end > num_samples:
-                                batch_end = num_samples
+            num_samples = self.len()
+            batch_start = 0
+            batch_end = batch_size
 
-    def prepare_questions_data(self, questions):
-        for question_id, question in questions.iteritems():
-            question.get_data()
+            while True:
+                # Get and yield the batch
+                if not lang_only:
+                    if self.img_pretrained_features.split("_")[1] is 'kcnn':
+                        I = np.zeros((batch_size, 1024), dtype=np.float32)
+                    elif self.img_pretrained_features.split("_")[1] is 'vgg16':
+                        I = np.zeros((batch_size, 25088), dtype=np.float32)
+                    elif self.img_pretrained_features.split("_")[1] is 'resnet':
+                        I = np.zeros((batch_size, 1, 1, 1, 2048), dtype=np.float32)
+                    else:
+                        I = np.zeros((batch_size, 224, 224, 3), dtype=np.uint8)
+                Q = np.zeros((batch_size, 22), dtype=np.int32)
+                A = np.zeros((batch_size, 10000), dtype=np.bool_)
+                for idx, sample in enumerate(self._samples[batch_start:batch_end]):
+                    if not lang_only:
+                        if self.img_pretrained_features.split("_")[1] is 'vgg16':
+                            I[idx] = np.reshape(features[sample._image.features_idx], 25088)
+                        else:
+                            I[idx] = features[sample._image.features_idx]
+                    Q[idx] = sample.get_question()
+                    A[idx] = sample.get_answer()
+                if not lang_only:
+                    yield ([I, Q], A)
+                else:
+                    yield (Q, A)
 
-    def prepare_answers_data(self, answers):
-        for answer_id, answer in answers.iteritems():
-            answer.compute_data()
+                batch_start += batch_size
+                # An epoch has finished
+                if batch_start >= num_samples:
+                    batch_start = 0
+                    # Change the order so the model won't see the samples in the same order in the next epoch
+                    if shuffle:
+                        random.shuffle(self._samples)
+                batch_end = batch_start + batch_size
+                if batch_end > num_samples:
+                    batch_end = num_samples
 
     def extract_vgg16_image_features(self, images, verbose=1, layers2remove=0, include_top=False):
         vgg = VGG16(weights='imagenet', include_top=include_top)
@@ -313,37 +286,16 @@ class VQADataset(Dataset):
             vgg.layers.pop()
         vgg.outputs = [vgg.layers[-1].output]
         vgg.layers[-1].outbound_nodes = []
-        file = h5py.File(os.path.join(config.DATA_PATH, self.name+'_image_features_vgg'+layers2remove+'.h5'), 'w')
+        file = h5py.File(os.path.join(config.DATA_PATH, self.name+'_image_features_vgg'+str(layers2remove)+'.h5'), 'w')
         features = file.create_dataset('feats')
         print 'Predicting VGG-16 image features...'
         for idx, image in images.iteritems():
             features[str(idx)] = vgg.predict(vgg_prep_input(np.expand_dims(image.get_data(), axis=0)), batch_size=100, verbose=verbose)
         print 'VGG-16 image features predicted!'
 
-        with h5py.File(os.path.join(config.DATA_PATH, self.name+'_image_features_vgg'+layers2remove+'.h5'), 'w') as f:
+        with h5py.File(os.path.join(config.DATA_PATH, self.name+'_image_features_vgg'+str(layers2remove)+'.h5'), 'w') as f:
             f.create_dataset('image_features', data=np.array(features))
             f.close()
-
-    def extract_vgg19_image_features(self):
-        print 'Loading vgg features...'
-        if self.name is not "test_dataset":
-            h5file = h5py.File(os.path.join(config.VGG_DATA, 'data_train_val/data_img.h5'))
-            if self.name is "train_dataset":
-                dset = h5file['images_train']
-                with h5py.File(os.path.join(config.VGG_DATA, 'train_data_img.h5')) as f:
-                    f.create_dataset('feats', data=dset)
-                    f.close()
-            elif self.name is "val_dataset":
-                dset = h5file['images_test']
-                with h5py.File(os.path.join(config.VGG_DATA, 'val_data_img.h5')) as f:
-                    f.create_dataset('feats', data=dset)
-                    f.close()
-        else:
-            h5file = h5py.File(os.path.join(config.VGG_DATA, 'data_train-val_test/data_img.h5'))
-            dset = h5file['images_test']
-            with h5py.File(os.path.join(config.VGG_DATA, 'test_data_img.h5')) as f:
-                f.create_dataset('feats', data=dset)
-                f.close()
 
     def extract_resnet50_image_features(self, images, verbose=0, layers2remove=0, include_top=False):
         resnet = ResNet50(weights='imagenet', include_top=include_top)
@@ -358,7 +310,7 @@ class VQADataset(Dataset):
                                              verbose=verbose))
         print 'ResNet-50 image features predicted!'
 
-        with h5py.File(os.path.join(config.DATA_PATH, self.name + '_image_features_resnet_2.h5'),
+        with h5py.File(os.path.join(config.DATA_PATH, self.name + '_image_features_resnet.h5'),
                        'w') as f:
             f.create_dataset('image_features', data=np.array(features))
             f.close()

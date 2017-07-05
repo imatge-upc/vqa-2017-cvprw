@@ -4,7 +4,6 @@ import cPickle as pickle
 import json
 
 from keras import backend as K
-from dframe.dataset.persistence import PicklePersistenceManager
 from vqa import config
 from vqa.dataset import VQADataset
 from vqa.models import ModelZero, ModelOne, ModelTwo, ModelThree, ModelFour, ModelFive
@@ -16,19 +15,16 @@ VOCABULARY_SIZE = 10000
 QUESTION_MAX_LEN = 22
 
 
-def main(action, model_id, force, parse_dataset):
-    # Create persistence manager
-    manager = PicklePersistenceManager()
-    tokenizer = get_tokenizer(os.path.join(config.DATA_PATH, 'tokenizer.p'))
+def main(action, model_id, force, tokenizer_path, weights):
+    tokenizer = get_tokenizer(os.path.join(config.DATA_PATH, tokenizer_path))
     model = get_model(int(model_id))
     if str(action) == 'train':
-        train_dataset = get_train_dataset(manager, tokenizer, force)
-        val_dataset = get_val_dataset(manager, tokenizer, force)
+        train_dataset = get_train_dataset(tokenizer, force)
+        val_dataset = get_val_dataset(tokenizer, force)
         model.train(train_dataset, val_dataset, BATCH_SIZE, EPOCHS)
-        #model.validate(val_dataset, config.MODELS_PATH + '/weights_m2.h5', BATCH_SIZE)
     elif str(action) == 'test':
-        test_dataset = get_test_dataset(manager, tokenizer, force)
-        model.test(test_dataset, config.MODELS_PATH + '/language_only.h5', BATCH_SIZE )
+        test_dataset = get_test_dataset(tokenizer, force)
+        model.test(test_dataset, os.path.join(config.MODELS_PATH, weights), BATCH_SIZE )
     else:
         print 'Not allowed action'
     K.clear_session()
@@ -46,62 +42,32 @@ def get_model(model_id):
     return switcher.get(model_id)
 
 
-def get_train_dataset(manager, tokenizer, force = False):
-    train_dataset_path = os.path.join(config.DATA_PATH, 'vgg_train_dataset.h5')
-    # Check if the data directory (where we will store our preprocessed datasets) exists. Create it if is doesn't
-    if not os.path.isdir(config.DATA_PATH):
-        os.mkdir(config.DATA_PATH)
-    if os.path.isfile(train_dataset_path):
-        with open(train_dataset_path, 'rb') as f:
-            print 'Loading train dataset from: {}'.format(train_dataset_path)
-            train_dataset = manager.load(f)
-            print 'Finished loading train dataset'
-    else:
-        # Load configuration
-        conf = config.check_config()
-        # Create & persist train dataset
-        print 'Creating train dataset'
-        train_dataset = VQADataset("train_dataset", conf.get_train_images_path(), conf.get_train_questions_path(),
-                                   conf.get_train_annotations_path(), tokenizer, 'n_a').build(force)
+def get_train_dataset(tokenizer, force = False):
+    # Load configuration
+    conf = config.check_config()
+    # Create & persist train dataset
+    print 'Creating train dataset'
+    train_dataset = VQADataset("train_dataset", conf.get_train_images_path(), conf.get_train_questions_path(),
+                               conf.get_train_annotations_path(), tokenizer, 'n_a').build(force)
     return train_dataset
 
 
-def get_val_dataset(manager, tokenizer, force = False):
-    val_dataset_path = os.path.join(config.DATA_PATH, 'vgg_val_dataset.p')
-    # Check if the data directory (where we will store our preprocessed datasets) exists. Create it if is doesn't
-    if not os.path.isdir(config.DATA_PATH):
-        os.mkdir(config.DATA_PATH)
-    if os.path.isfile(val_dataset_path):
-        with open(val_dataset_path, 'rb') as f:
-            print 'Loading validation dataset from: {}'.format(val_dataset_path)
-            val_dataset = pickle.load(f)
-            print 'Finished loading validation dataset'
-    else:
-        # Load configuration
-        conf = config.check_config()
-        # Create & persist val dataset
-        print 'Creating validation dataset'
-        val_dataset = VQADataset("val_dataset", conf.get_val_images_path(), conf.get_val_questions_path(),
-                                   conf.get_val_annotations_path(), tokenizer, 'n_a').build(force)
+def get_val_dataset(tokenizer, force = False):
+    # Load configuration
+    conf = config.check_config()
+    # Create & persist val dataset
+    print 'Creating validation dataset'
+    val_dataset = VQADataset("val_dataset", conf.get_val_images_path(), conf.get_val_questions_path(),
+                               conf.get_val_annotations_path(), tokenizer, 'n_a').build(force)
     return val_dataset
 
-def get_test_dataset(manager, tokenizer, force = False):
-    test_dataset_path = os.path.join(config.DATA_PATH, 'test_dataset.p')
-    # Check if the data directory (where we will store our preprocessed datasets) exists. Create it if is doesn't
-    if not os.path.isdir(config.DATA_PATH):
-        os.mkdir(config.DATA_PATH)
-    if os.path.isfile(test_dataset_path):
-        with open(test_dataset_path, 'rb') as f:
-            print 'Loading validation dataset from: {}'.format(test_dataset_path)
-            test_dataset = pickle.load(f)
-            print 'Finished loading validation dataset'
-    else:
-        # Load configuration
-        conf = config.check_config()
-        # Create & persist test dataset
-        print 'Creating test dataset'
-        test_dataset = VQADataset("test-dev_dataset", conf.get_test_images_path(), conf.get_test_questions_path(),
-                                 tokenizer=tokenizer, img_pretrained_features='n_a').build(force)
+def get_test_dataset(tokenizer, force = False):
+    # Load configuration
+    conf = config.check_config()
+    # Create & persist test dataset
+    print 'Creating test dataset'
+    test_dataset = VQADataset("test-dev_dataset", conf.get_test_images_path(), conf.get_test_questions_path(),
+                             tokenizer=tokenizer, img_pretrained_features='n_a').build(force)
     return test_dataset
 
 
@@ -162,13 +128,16 @@ if __name__ == '__main__':
         help='Add this flag if you want to force the dataset parsing from scratch'
     )
     parser.add_argument(
-        '-p',
-        '--parse_dataset',
-        choices=['all', 'train', 'val', 'test', 'test-dev'],
-        default='all',
-        help='Options: all, train, val, test-dev'
-        )
+        '-tk',
+        '--tokenizer',
+        default='tokenizer.p'
+    )
+    parser.add_argument(
+        '-w',
+        '--weights',
+        help='Add weights path to generate test submission file.'
+    )
 
     args = parser.parse_args()
 
-    main(args.action, args.model, args.force, args.parse_dataset)
+    main(args.action, args.model, args.force, args.tokenizer, args.weights)

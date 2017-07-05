@@ -121,7 +121,7 @@ def validate_config(config):
 
 def _print_header():
     print '{:=^50}'.format('')
-    print '{:=^50}'.format(' ViQAPG ')
+    print '{:=^50}'.format(' VQA ')
     print '{:=^50}'.format('')
     print ''
     print 'Welcome to VQA module! Here we will setup all the configuration that this software needs to run smoothly'

@@ -5,7 +5,7 @@ from keras.preprocessing import image
 from keras.preprocessing.sequence import pad_sequences
 
 class VQASample:
-    """Base class to hold the information of an example/sample in a dataset"""
+    """Base class to hold the information of an example/sample in VQA dataset"""
 
     def __init__(self, image, question, answer=None):
         if image is None or question is None:
@@ -37,16 +37,16 @@ class VQASample:
 
 
 class Image:
-    def __init__(self, image_id, image_path, features_idx=None, pretrained_features=None, compute_data=True):
+    def __init__(self, image_id, image_path, features_idx=None, hfile=None, compute_data=True):
         self.id = image_id
         self.path = image_path
         self.features_idx = features_idx
-        #if compute_data is True:
-        #self.compute_data(pretrained_features)
+        if compute_data is True:
+            self.compute_data(hfile)
 
-    def compute_data(self, pretrained_features=None):
+    def compute_data(self, file=None):
         img = image.load_img(self.path, target_size=(224, 224))
-        pretrained_features.create_dataset(str(self.id), data=image.img_to_array(img), compression="gzip")
+        file.create_dataset(str(self.id), data=image.img_to_array(img), compression="gzip")
 
     def get_data(self):
         img = image.load_img(self.path, target_size=(224, 224))
@@ -81,12 +81,12 @@ class Text:
 
 class Question(Text):
 
-    def __init__(self, question_id, image_id, question_string, tokenizer, dset):
+    def __init__(self, question_id, image_id, question_string, tokenizer, dset=None):
         self.id = question_id
         self.image_id = image_id
         super(Question, self).__init__(question_string, tokenizer)
-        #self.data = self.compute_data()
-        #dset.create_dataset(str(self.id), data=self.compute_data(), compression='gzip')
+        if dset is not None:
+            dset.create_dataset(str(self.id), data=self.compute_data(), compression='gzip')
 
     def get_question_id(self):
         return self.id
@@ -105,14 +105,14 @@ class Question(Text):
 
 class Answer(Text):
 
-    def __init__(self, answer_id, question_id, image_id, answer_string, tokenizer, dset):
+    def __init__(self, answer_id, question_id, image_id, answer_string, tokenizer, dset=None):
         self.id = answer_id
         self.question_id = question_id
         self.image_id = image_id
         self.tokens_idx = None
         super(Answer, self).__init__(answer_string, tokenizer)
-        #self.data = self.compute_data()
-        #dset.create_dataset(str(10*self.question_id + self.id - 1), data=self.compute_data(), compression="lzf")
+        if dset is not None:
+            dset.create_dataset(str(10*self.question_id + self.id - 1), data=self.compute_data(), compression="lzf")
 
     def compute_data(self):
         try:
@@ -122,13 +122,6 @@ class Answer(Text):
                 'No tokenizer has been set in order to process the text. Use set_tokenizer or the constructor param')
 
     def get_data(self):
-        """one_hot_ans = np.zeros(20000)
-        try:
-            idx = h5file[str(self.id)][0]
-            one_hot_ans[idx] = 1
-            return one_hot_ans.astype(np.bool_)
-        except Exception:
-            raise Exception('No computed data has been stored for that answer.')"""
         self.compute_data()
         one_hot_ans = np.zeros(10000) #TODO: Avoid hardcoded vocab size
         if self.tokens_idx:

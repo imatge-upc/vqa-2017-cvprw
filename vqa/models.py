@@ -114,7 +114,7 @@ class ModelZero(DFModel):
         print('Saving results...')
         results_dict = [{'answer': word_dict[results[idx]], 'question_id': sample._question.id}
                         for idx, sample in enumerate(dataset.get_samples())]
-        with open('model_zero_results', 'w') as f:
+        with open('model_zero_results.json', 'w') as f:
             json.dump(results_dict, f)
         print('Results saved')
 
@@ -150,7 +150,7 @@ class ModelOne(DFModel):
                 print('Model compiled')
         except IOError:
 
-            image_input = Input(shape=(4096, ))
+            image_input = Input(shape=(25088, ))
             x = Dropout(0.5)(image_input)
             x = Dense(output_dim=4096, activation='relu')(x)
             x = Dropout(0.5)(x)
@@ -165,7 +165,7 @@ class ModelOne(DFModel):
             sentence_embedded = Dropout(0.5)(sentence_embedded)
 
             # Merge
-            merged = merge([image_features, sentence_embedded], mode='sum')  # Merge for layers, merge for tensors
+            merged = merge([image_features, sentence_embedded], mode='mul')  # Merge for layers, merge for tensors
             output = Dense(output_dim=self.vocabulary_size, activation='softmax')(merged)
 
             self.vqa_model = Model(input=[image_input, question_input], output=output)
@@ -230,7 +230,7 @@ class ModelOne(DFModel):
         pass
 
 class ModelTwo(DFModel):
-    def __init__(self, vocabulary_size=10000, question_max_len=22, model_path='model_2_test_batchnorm.p'):
+    def __init__(self, vocabulary_size=10000, question_max_len=22, model_path='model_2.p'):
         self.vqa_model = None
         self.EMBED_HIDDEN_SIZE = 100
         self.vocabulary_size = vocabulary_size
@@ -238,7 +238,7 @@ class ModelTwo(DFModel):
         if not os.path.isdir(config.MODELS_PATH):
             os.mkdir(config.MODELS_PATH)
         self.MODEL_PATH = os.path.join(config.MODELS_PATH, model_path)
-        self.weights_path = os.path.join(config.MODELS_PATH, 'weights_m2_batchnorm.h5')
+        self.weights_path = os.path.join(config.MODELS_PATH, 'weights_m2.h5')
         self.build()
 
     def build(self):
@@ -274,7 +274,7 @@ class ModelTwo(DFModel):
 
             self.vqa_model = Model(input=[image_input, question_input], output=output)
             print('Baseline model created')
-            plot(self.vqa_model, show_shapes=True, to_file='model_2_batchnorm.png', show_layer_names=False)
+            plot(self.vqa_model, show_shapes=True, to_file='model_2.png', show_layer_names=False)
             print('Compiling baseline model...')
             self.vqa_model.compile(optimizer=adam, loss='categorical_crossentropy', metrics=['accuracy'])
             print('Baseline model compiled')
@@ -325,7 +325,7 @@ class ModelTwo(DFModel):
 
         print('Answers predicted')
         print 'Saving...'
-        with open(type + '_model_three_new_results_sum_redlr.json', 'w') as f:
+        with open(type + '_model_two_results.json', 'w') as f:
             json.dump(results_dict, f)
         print('Results saved')
 
@@ -334,7 +334,7 @@ class ModelTwo(DFModel):
 
 
 class ModelThree(DFModel):
-    def __init__(self, vocabulary_size=10000, question_max_len=22, model_path='model_3_sum_batchnorm.p'):
+    def __init__(self, vocabulary_size=10000, question_max_len=22, model_path='model_3.p'):
         self.vqa_model = None
         self.EMBED_HIDDEN_SIZE = 100
         self.vocabulary_size = vocabulary_size
@@ -342,7 +342,7 @@ class ModelThree(DFModel):
         if not os.path.isdir(config.MODELS_PATH):
             os.mkdir(config.MODELS_PATH)
         self.MODEL_PATH = os.path.join(config.MODELS_PATH, model_path)
-        self.weights_path = os.path.join(config.MODELS_PATH, 'weights_m3_sum_batchnorm.h5')
+        self.weights_path = os.path.join(config.MODELS_PATH, 'weights_m3.h5')
         self.build()
         #
 
@@ -380,7 +380,7 @@ class ModelThree(DFModel):
 
             self.vqa_model = Model(input=[image_input, question_input], output=output)
             print('Baseline model created')
-            plot(self.vqa_model, show_shapes=True, to_file='model_3_sum.png', show_layer_names=False)
+            plot(self.vqa_model, show_shapes=True, to_file='model_3.png', show_layer_names=False)
             print('Compiling baseline model...')
             self.vqa_model.compile(optimizer=adam, loss='categorical_crossentropy', metrics=['accuracy'])
             print('Baseline model compiled')
@@ -437,7 +437,7 @@ class ModelThree(DFModel):
         print('Saving results...')
         results_dict = [{'answer': word_dict[results[idx]], 'question_id': sample._question.id}
                         for idx, sample in enumerate(dataset.get_samples())]
-        with open(type + '_model_three_new_results.json', 'w') as f:
+        with open(type + '_model_three_results.json', 'w') as f:
             json.dump(results_dict, f)
         print('Results saved')
 
@@ -546,7 +546,7 @@ class ModelFour(DFModel):
         pass
 
 class ModelFive(DFModel):
-    def __init__(self, vocabulary_size=10000, question_max_len=22, model_path='model_5_concat_nodense.p'):
+    def __init__(self, vocabulary_size=10000, question_max_len=22, model_path='model_5.p'):
         self.vqa_model = None
         self.EMBED_HIDDEN_SIZE = 100
         self.vocabulary_size = vocabulary_size
@@ -554,7 +554,7 @@ class ModelFive(DFModel):
         if not os.path.isdir(config.MODELS_PATH):
             os.mkdir(config.MODELS_PATH)
         self.MODEL_PATH = os.path.join(config.MODELS_PATH, model_path)
-        self.weights_path = os.path.join(config.MODELS_PATH, 'weights_m5_concat_nodense.h5')
+        self.weights_path = os.path.join(config.MODELS_PATH, 'weights_m5.h5')
         self.build()
 
     def build(self):
@@ -649,7 +649,7 @@ class ModelFive(DFModel):
         print('Saving results...')
         results_dict = [{'answer': word_dict[results[idx]], 'question_id': sample._question.id}
                         for idx, sample in enumerate(dataset.get_samples())]
-        with open(type + 'model_5_results.json', 'w') as f:
+        with open(type + 'model_five_results.json', 'w') as f:
             json.dump(results_dict, f)
         print('Results saved')
 

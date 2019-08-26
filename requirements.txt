@@ -6,7 +6,7 @@ h5py==2.6.0
 ipython==5.1.0
 ipython-genutils==0.1.0
 keras=1.2.1
-nltk=3.2.2
+nltk=3.4.5
 numpy==1.12.1
 pathlib2==2.1.0
 pexpect==4.2.1
